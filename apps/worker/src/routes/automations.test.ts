@@ -59,10 +59,18 @@ function makeAutomationDb(rows: AutomationRow[]) {
   return { db, calls };
 }
 
-function setupApp(db: D1Database) {
-  const app = new Hono<{ Bindings: { DB: D1Database } }>();
+type Role = 'owner' | 'admin' | 'staff';
+
+function setupApp(db: D1Database, role: Role = 'owner') {
+  const app = new Hono<{
+    Bindings: { DB: D1Database };
+    Variables: { staff: { id: string; role: Role } };
+  }>();
   app.use('*', async (c, next) => {
     c.env = { DB: db };
+    // authMiddleware normally does this; injected here so requireRole on the
+    // CRUD routes has an identity to check.
+    c.set('staff', { id: 'test-staff', role });
     await next();
   });
   app.route('/', automations);
@@ -140,5 +148,89 @@ describe('GET /api/automations?lineAccountId=X', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; data: unknown[] };
     expect(body.data).toEqual([]);
+  });
+});
+
+// =====================================================
+// Role guard — オートメーションは send_message / send_webhook を無人で実行する
+// =====================================================
+
+describe('automation CRUD role guard', () => {
+  const { db } = makeAutomationDb([]);
+
+  const sendMessageRule = {
+    name: 'staff rule',
+    eventType: 'message_received',
+    actions: [{ type: 'send_message', content: 'hi' }],
+  };
+
+  test('staff cannot create an automation (403, no DB write)', async () => {
+    const res = await setupApp(db, 'staff').request('/api/automations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sendMessageRule),
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.createAutomation).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot update an automation (403, no DB write)', async () => {
+    const res = await setupApp(db, 'staff').request('/api/automations/a-1', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: true }),
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.updateAutomation).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot delete an automation (403, no DB write)', async () => {
+    const res = await setupApp(db, 'staff').request('/api/automations/a-1', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.deleteAutomation).not.toHaveBeenCalled();
+  });
+
+  test('admin can create an automation', async () => {
+    dbMocks.createAutomation.mockResolvedValue({
+      id: 'a-new',
+      name: 'staff rule',
+      event_type: 'message_received',
+      actions: JSON.stringify(sendMessageRule.actions),
+      is_active: 1,
+      priority: 0,
+      line_account_id: null,
+      created_at: '2026-08-11T00:00:00.000',
+    });
+    const res = await setupApp(db, 'admin').request('/api/automations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sendMessageRule),
+    });
+    expect(res.status).toBe(201);
+    expect(dbMocks.createAutomation).toHaveBeenCalledOnce();
+  });
+
+  test('owner can delete an automation', async () => {
+    dbMocks.deleteAutomation.mockResolvedValue(undefined);
+    const res = await setupApp(db, 'owner').request('/api/automations/a-1', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(200);
+    expect(dbMocks.deleteAutomation).toHaveBeenCalledOnce();
+  });
+
+  // 閲覧・実行ログは staff の日常業務なので開放したままであることの回帰テスト。
+  test('staff can still list automations', async () => {
+    dbMocks.getAutomations.mockResolvedValue([]);
+    const res = await setupApp(db, 'staff').request('/api/automations');
+    expect(res.status).toBe(200);
+  });
+
+  test('staff can still read automation logs', async () => {
+    dbMocks.getAutomationLogs.mockResolvedValue([]);
+    const res = await setupApp(db, 'staff').request('/api/automations/a-1/logs');
+    expect(res.status).toBe(200);
   });
 });

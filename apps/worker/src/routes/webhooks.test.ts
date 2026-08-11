@@ -29,14 +29,27 @@ import {
   getOutgoingWebhookById,
   createOutgoingWebhook,
   updateOutgoingWebhook,
+  deleteOutgoingWebhook,
 } from '@line-crm/db';
 import { webhooks } from './webhooks.js';
 
 const VALID_SECRET = 'a'.repeat(32);
 const SHORT_SECRET = 'a'.repeat(31);
 
-function setupApp() {
-  const app = new Hono();
+type Role = 'owner' | 'admin' | 'staff';
+
+// The real Worker resolves the caller via authMiddleware; here we inject the
+// staff identity directly so requireRole on the CRUD routes has something to
+// check. Defaults to owner so the pre-existing validation tests are unaffected.
+function setupApp(role: Role = 'owner') {
+  const app = new Hono<{
+    Variables: { staff: { id: string; role: Role } };
+    Bindings: { DB: D1Database };
+  }>();
+  app.use('*', async (c, next) => {
+    c.set('staff', { id: 'test-staff', role });
+    await next();
+  });
   app.route('/', webhooks);
   return app;
 }
@@ -583,5 +596,129 @@ describe('POST /api/webhooks/incoming/:id/receive — signature', () => {
       baseEnv,
     );
     expect(res.status).toBe(200);
+  });
+});
+
+// =====================================================
+// Role guard — 送信先URLの登録は情報の外部流出に直結する
+// =====================================================
+
+describe('webhook CRUD role guard', () => {
+  const validOutgoing = {
+    name: 'exfil',
+    url: 'https://attacker.example.com/collect',
+    eventTypes: ['message_received'],
+    secret: VALID_SECRET,
+  };
+
+  test('staff cannot register an outgoing webhook (403, no DB write)', async () => {
+    const res = await setupApp('staff').request(
+      '/api/webhooks/outgoing',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validOutgoing),
+      },
+      baseEnv,
+    );
+    expect(res.status).toBe(403);
+    expect(createOutgoingWebhook).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot update an outgoing webhook (403, no DB write)', async () => {
+    const res = await setupApp('staff').request(
+      '/api/webhooks/outgoing/owh-1',
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://attacker.example.com/collect' }),
+      },
+      baseEnv,
+    );
+    expect(res.status).toBe(403);
+    expect(updateOutgoingWebhook).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot delete an outgoing webhook (403, no DB write)', async () => {
+    const res = await setupApp('staff').request(
+      '/api/webhooks/outgoing/owh-1',
+      { method: 'DELETE' },
+      baseEnv,
+    );
+    expect(res.status).toBe(403);
+    expect(deleteOutgoingWebhook).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot register an incoming webhook (403, no DB write)', async () => {
+    const res = await setupApp('staff').request(
+      '/api/webhooks/incoming',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'in', secret: VALID_SECRET }),
+      },
+      baseEnv,
+    );
+    expect(res.status).toBe(403);
+    expect(createIncomingWebhook).not.toHaveBeenCalled();
+  });
+
+  test('admin can register an outgoing webhook', async () => {
+    vi.mocked(createOutgoingWebhook).mockResolvedValue({
+      id: 'owh-new',
+      name: 'exfil',
+      url: validOutgoing.url,
+      event_types: JSON.stringify(validOutgoing.eventTypes),
+      secret: VALID_SECRET,
+      is_active: 1,
+      created_at: '2026-08-11T00:00:00.000',
+      updated_at: '2026-08-11T00:00:00.000',
+    } as never);
+    const res = await setupApp('admin').request(
+      '/api/webhooks/outgoing',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validOutgoing),
+      },
+      baseEnv,
+    );
+    expect(res.status).toBe(201);
+    expect(createOutgoingWebhook).toHaveBeenCalled();
+  });
+
+  // 一覧の閲覧は staff の日常業務なので開放したままであることの回帰テスト。
+  test('staff can still list outgoing webhooks', async () => {
+    vi.mocked(getOutgoingWebhooks).mockResolvedValue([]);
+    const res = await setupApp('staff').request(
+      '/api/webhooks/outgoing',
+      { method: 'GET' },
+      baseEnv,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  // 受信エンドポイントは authMiddleware を通らない公開経路。ロールではなく
+  // HMAC 署名が唯一の門番なので、staff 相当でも 401 (署名なし) で止まること。
+  test('receive endpoint is not role-gated (signature is the gate)', async () => {
+    vi.mocked(getIncomingWebhookById).mockResolvedValue({
+      id: 'iwh-1',
+      name: 'in',
+      source_type: 'test',
+      secret: VALID_SECRET,
+      is_active: 1,
+      created_at: '2026-08-11T00:00:00.000',
+      updated_at: '2026-08-11T00:00:00.000',
+    } as never);
+    const res = await setupApp('staff').request(
+      '/api/webhooks/incoming/iwh-1/receive',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ping: true }),
+      },
+      baseEnv,
+    );
+    expect(res.status).toBe(401);
   });
 });

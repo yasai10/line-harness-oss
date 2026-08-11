@@ -19,6 +19,7 @@ import { buildOgHtml } from '../lib/og-html.js';
 import { resolveOgForTrackedLink } from '../lib/og-resolver.js';
 import { resolveTrackedLinkBaseUrl } from '../lib/link-base-url.js';
 import { awardActivityMileage } from '../services/activity-mileage.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const trackedLinks = new Hono<Env>();
 
@@ -121,7 +122,9 @@ trackedLinks.get('/api/tracked-links/:id', async (c) => {
 });
 
 // POST /api/tracked-links — create
-trackedLinks.post('/api/tracked-links', async (c) => {
+// リンクは tagId / scenarioId / introTemplateId を通じて LINE 送信の副作用を
+// 持たせられる (/t クリック時に発火する) ため、CRUD は owner / admin 限定。
+trackedLinks.post('/api/tracked-links', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name: string;
@@ -162,7 +165,7 @@ trackedLinks.post('/api/tracked-links', async (c) => {
 });
 
 // PATCH /api/tracked-links/:id — update mutable fields
-trackedLinks.patch('/api/tracked-links/:id', async (c) => {
+trackedLinks.patch('/api/tracked-links/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -191,7 +194,7 @@ trackedLinks.patch('/api/tracked-links/:id', async (c) => {
 });
 
 // DELETE /api/tracked-links/:id
-trackedLinks.delete('/api/tracked-links/:id', async (c) => {
+trackedLinks.delete('/api/tracked-links/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const link = await getTrackedLinkById(c.env.DB, id);

@@ -15,6 +15,7 @@ import {
 import { IDENTITY_KEY_SQL } from '../lib/identity-key.js';
 import { notifyAffiliateApproval } from '../services/affiliate-notifier.js';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const conversions = new Hono<Env>();
 
@@ -41,7 +42,7 @@ conversions.get('/api/conversions/points', async (c) => {
 });
 
 // POST /api/conversions/points - create
-conversions.post('/api/conversions/points', async (c) => {
+conversions.post('/api/conversions/points', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name: string;
@@ -71,7 +72,7 @@ conversions.post('/api/conversions/points', async (c) => {
 });
 
 // DELETE /api/conversions/points/:id - delete
-conversions.delete('/api/conversions/points/:id', async (c) => {
+conversions.delete('/api/conversions/points/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteConversionPoint(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -84,6 +85,14 @@ conversions.delete('/api/conversions/points/:id', async (c) => {
 // ── Conversion Tracking ─────────────────────────────────────────────────────
 
 // POST /api/conversions/track - record conversion
+//
+// NOTE: requireRole is deliberately NOT applied here. This endpoint is the
+// documented integration point for external LPs / thank-you pages / forms
+// (docs/wiki/17-CV-Tracking-and-Affiliates.md, docs/manual/04-campaign-design.md
+// both show it being called from outside with an API key). Restricting it to
+// owner/admin would break any integration wired up with a staff-role key.
+// It only appends a CV row; the money-affecting decision is the approval
+// PATCH below, which IS guarded.
 conversions.post('/api/conversions/track', async (c) => {
   try {
     const body = await c.req.json<{
@@ -208,7 +217,8 @@ conversions.get('/api/conversions/approvals', async (c) => {
 });
 
 // PATCH /api/conversions/events/:id/approval - approve/reject an attributed CV
-conversions.patch('/api/conversions/events/:id/approval', async (c) => {
+// 承認はアフィリエイト報酬(金銭)の確定と本人への通知を伴うため owner / admin 限定。
+conversions.patch('/api/conversions/events/:id/approval', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req
       .json<{ status?: string }>()

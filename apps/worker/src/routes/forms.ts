@@ -26,6 +26,7 @@ import type {
 } from '@line-crm/db';
 import type { Env } from '../index.js';
 import { awardActivityMileage } from '../services/activity-mileage.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const forms = new Hono<Env>();
 
@@ -162,7 +163,10 @@ forms.get('/api/forms/:id', async (c) => {
 });
 
 // POST /api/forms — create form
-forms.post('/api/forms', async (c) => {
+// フォーム定義は onSubmitTagId / onSubmitScenarioId / onSubmitWebhookUrl を通じて
+// LINE 送信と外部送信を引き起こすため、定義の CRUD は owner / admin 限定。
+// 回答の閲覧 (GET /api/forms/:id/submissions) は staff にも開放したまま。
+forms.post('/api/forms', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name: string;
@@ -210,7 +214,7 @@ forms.post('/api/forms', async (c) => {
 });
 
 // PUT /api/forms/:id — update form
-forms.put('/api/forms/:id', async (c) => {
+forms.put('/api/forms/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -263,7 +267,7 @@ forms.put('/api/forms/:id', async (c) => {
 });
 
 // DELETE /api/forms/:id
-forms.delete('/api/forms/:id', async (c) => {
+forms.delete('/api/forms/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const form = await getFormById(c.env.DB, id);

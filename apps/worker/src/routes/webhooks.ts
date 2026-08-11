@@ -12,6 +12,7 @@ import {
   deleteOutgoingWebhook,
 } from '@line-crm/db';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const webhooks = new Hono<Env>();
 
@@ -88,7 +89,7 @@ webhooks.get('/api/webhooks/incoming', async (c) => {
   }
 });
 
-webhooks.post('/api/webhooks/incoming', async (c) => {
+webhooks.post('/api/webhooks/incoming', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{ name: string; sourceType?: string; secret?: string }>();
     if (!body.name) {
@@ -125,7 +126,7 @@ webhooks.post('/api/webhooks/incoming', async (c) => {
   }
 });
 
-webhooks.put('/api/webhooks/incoming/:id', async (c) => {
+webhooks.put('/api/webhooks/incoming/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{ name?: string; sourceType?: string; secret?: string; isActive?: boolean }>();
@@ -174,7 +175,7 @@ webhooks.put('/api/webhooks/incoming/:id', async (c) => {
   }
 });
 
-webhooks.delete('/api/webhooks/incoming/:id', async (c) => {
+webhooks.delete('/api/webhooks/incoming/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteIncomingWebhook(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -208,7 +209,9 @@ webhooks.get('/api/webhooks/outgoing', async (c) => {
   }
 });
 
-webhooks.post('/api/webhooks/outgoing', async (c) => {
+// 送信先 URL の登録は「どこへ情報を送るか」を決める操作。message_received を
+// 購読させればトーク本文がそのまま外部へ出るため owner / admin 限定にする。
+webhooks.post('/api/webhooks/outgoing', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name: string;
@@ -255,7 +258,7 @@ webhooks.post('/api/webhooks/outgoing', async (c) => {
   }
 });
 
-webhooks.put('/api/webhooks/outgoing/:id', async (c) => {
+webhooks.put('/api/webhooks/outgoing/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -326,7 +329,7 @@ webhooks.put('/api/webhooks/outgoing/:id', async (c) => {
   }
 });
 
-webhooks.delete('/api/webhooks/outgoing/:id', async (c) => {
+webhooks.delete('/api/webhooks/outgoing/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteOutgoingWebhook(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -338,6 +341,9 @@ webhooks.delete('/api/webhooks/outgoing/:id', async (c) => {
 
 // ========== 受信Webhookエンドポイント (外部システムからの受信) ==========
 
+// NOTE: requireRole is deliberately NOT applied here. authMiddleware skips this
+// path entirely (middleware/auth.ts — /api/webhooks/incoming/:id/receive), so
+// there is no staff identity to check; the gate is the HMAC-SHA256 signature.
 webhooks.post('/api/webhooks/incoming/:id/receive', async (c) => {
   try {
     const id = c.req.param('id');

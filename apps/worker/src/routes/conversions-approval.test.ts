@@ -236,3 +236,94 @@ describe('PATCH /api/conversions/events/:id/approval', () => {
     expect(notifyAffiliateApproval).not.toHaveBeenCalled();
   });
 });
+
+// =====================================================
+// Role guard — CV承認はアフィリエイト報酬(金銭)の確定に直結する
+// =====================================================
+//
+// これらは worker 全体を通す (index.ts の authMiddleware → requireRole)。
+// staff 用の API キーは getStaffByApiKey が role='staff' を返すことで再現する。
+const STAFF_KEY = 'test-staff-key';
+
+function reqAs(role: 'owner' | 'admin' | 'staff', method: string, path: string, body?: unknown) {
+  dbMocks.getStaffByApiKey.mockResolvedValue({ id: 'staff-1', name: 'Staff', role });
+  const headers = new Headers({ Authorization: `Bearer ${STAFF_KEY}` });
+  if (body !== undefined) headers.set('Content-Type', 'application/json');
+  return worker.fetch(
+    new Request(`https://worker.example.com${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+    env,
+    { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext,
+  );
+}
+
+describe('conversions role guard', () => {
+  it('staff cannot approve a CV (403, no DB write, no affiliate notify)', async () => {
+    const res = await reqAs('staff', 'PATCH', '/api/conversions/events/ev-1/approval', {
+      status: 'approved',
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.setConversionApproval).not.toHaveBeenCalled();
+    expect(notifyAffiliateApproval).not.toHaveBeenCalled();
+  });
+
+  it('staff cannot reject a CV (403, no DB write)', async () => {
+    const res = await reqAs('staff', 'PATCH', '/api/conversions/events/ev-1/approval', {
+      status: 'rejected',
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.setConversionApproval).not.toHaveBeenCalled();
+  });
+
+  it('admin can approve a CV', async () => {
+    dbMocks.setConversionApproval.mockResolvedValue(true);
+    dbMocks.getConversionApprovalNotifyInfo.mockResolvedValue(null);
+    const res = await reqAs('admin', 'PATCH', '/api/conversions/events/ev-1/approval', {
+      status: 'approved',
+    });
+    expect(res.status).toBe(200);
+    expect(dbMocks.setConversionApproval).toHaveBeenCalledOnce();
+  });
+
+  it('staff cannot create or delete a conversion point (403)', async () => {
+    const created = await reqAs('staff', 'POST', '/api/conversions/points', {
+      name: 'CV', eventType: 'purchase',
+    });
+    expect(created.status).toBe(403);
+    expect(dbMocks.createConversionPoint).not.toHaveBeenCalled();
+
+    const deleted = await reqAs('staff', 'DELETE', '/api/conversions/points/cp-1');
+    expect(deleted.status).toBe(403);
+    expect(dbMocks.deleteConversionPoint).not.toHaveBeenCalled();
+  });
+
+  // 承認待ち一覧・レポートの閲覧は staff の日常業務なので開放したまま。
+  it('staff can still read the approval queue', async () => {
+    dbMocks.getConversionApprovalQueue.mockResolvedValue([]);
+    const res = await reqAs('staff', 'GET', '/api/conversions/approvals?status=pending');
+    expect(res.status).toBe(200);
+  });
+
+  // POST /api/conversions/track は外部 LP / フォームからの連携用なので
+  // 意図的に requireRole を付けていない (壊すと外部計測が止まる)。
+  it('staff can still record a conversion via /track (external integration path)', async () => {
+    dbMocks.trackConversion.mockResolvedValue({
+      id: 'ev-new',
+      conversion_point_id: 'cp-1',
+      friend_id: 'f-1',
+      user_id: null,
+      affiliate_code: null,
+      metadata: null,
+      created_at: '2026-08-11T00:00:00.000',
+    });
+    const res = await reqAs('staff', 'POST', '/api/conversions/track', {
+      conversionPointId: 'cp-1',
+      friendId: 'f-1',
+    });
+    expect(res.status).toBe(201);
+    expect(dbMocks.trackConversion).toHaveBeenCalledOnce();
+  });
+});

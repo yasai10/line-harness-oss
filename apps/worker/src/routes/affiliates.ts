@@ -21,6 +21,7 @@ import {
 import { IDENTITY_KEY_SQL } from '../lib/identity-key.js';
 import { resolveLinkBaseUrl } from '../lib/link-base-url.js';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const affiliates = new Hono<Env>();
 
@@ -74,7 +75,7 @@ affiliates.get('/api/affiliates/:id', async (c) => {
 //        - OSS back-compat. `code` must be >= 4 chars, alphanumeric only.
 const CODE_RE = /^[A-Za-z0-9]{4,}$/;
 
-affiliates.post('/api/affiliates', async (c) => {
+affiliates.post('/api/affiliates', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name?: string;
@@ -195,7 +196,8 @@ affiliates.post('/api/affiliates', async (c) => {
 });
 
 // PUT /api/affiliates/:id - update
-affiliates.put('/api/affiliates/:id', async (c) => {
+// commissionRate は報酬額に直結するため owner / admin 限定。
+affiliates.put('/api/affiliates/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -221,7 +223,7 @@ affiliates.put('/api/affiliates/:id', async (c) => {
 });
 
 // DELETE /api/affiliates/:id - delete
-affiliates.delete('/api/affiliates/:id', async (c) => {
+affiliates.delete('/api/affiliates/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteAffiliate(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -308,6 +310,8 @@ affiliates.get('/api/friends/:id/journey', async (c) => {
 });
 
 // POST /api/affiliates/click - record click (public endpoint tracked by ref param)
+// NOTE: no requireRole — authMiddleware skips this path (middleware/auth.ts),
+// so it is called anonymously from LPs and there is no staff identity to check.
 affiliates.post('/api/affiliates/click', async (c) => {
   try {
     const body = await c.req.json<{
