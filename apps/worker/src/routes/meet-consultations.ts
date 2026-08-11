@@ -5,6 +5,7 @@ import {
   registerMeetConsultation,
   type RegisterMeetConsultationInput,
 } from '../services/meet-consultation-reminders.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const meetConsultations = new Hono<Env>();
 
@@ -33,7 +34,7 @@ meetConsultations.get('/api/meet-consultations', async (c) => {
   return c.json({ success: true, data: result.results ?? [] });
 });
 
-meetConsultations.post('/api/meet-consultations', async (c) => {
+meetConsultations.post('/api/meet-consultations', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<RegisterMeetConsultationInput>();
     const registered = await registerMeetConsultation(c.env.DB, body);
@@ -45,7 +46,7 @@ meetConsultations.post('/api/meet-consultations', async (c) => {
   }
 });
 
-meetConsultations.delete('/api/meet-consultations/:externalEventId', async (c) => {
+meetConsultations.delete('/api/meet-consultations/:externalEventId', requireRole('owner', 'admin'), async (c) => {
   const cancelled = await cancelMeetConsultation(c.env.DB, c.req.param('externalEventId'));
   if (!cancelled) return c.json({ success: false, error: 'consultation not found' }, 404);
   return c.json({ success: true, data: null });

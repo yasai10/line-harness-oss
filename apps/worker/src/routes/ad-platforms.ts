@@ -10,6 +10,7 @@ import {
 } from '@line-crm/db';
 import { sendAdConversions } from '../services/ad-conversion.js';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 function maskConfig(config: Record<string, unknown>): Record<string, unknown> {
   const masked: Record<string, unknown> = {};
@@ -48,7 +49,7 @@ adPlatforms.get('/api/ad-platforms', async (c) => {
 });
 
 // POST /api/ad-platforms - create
-adPlatforms.post('/api/ad-platforms', async (c) => {
+adPlatforms.post('/api/ad-platforms', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name: string;
@@ -90,7 +91,7 @@ adPlatforms.post('/api/ad-platforms', async (c) => {
 });
 
 // PUT /api/ad-platforms/:id - update
-adPlatforms.put('/api/ad-platforms/:id', async (c) => {
+adPlatforms.put('/api/ad-platforms/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -124,7 +125,7 @@ adPlatforms.put('/api/ad-platforms/:id', async (c) => {
 });
 
 // POST /api/ad-platforms/test - test conversion send (must be before :id routes)
-adPlatforms.post('/api/ad-platforms/test', async (c) => {
+adPlatforms.post('/api/ad-platforms/test', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       platform: string;
@@ -159,7 +160,7 @@ adPlatforms.post('/api/ad-platforms/test', async (c) => {
 });
 
 // DELETE /api/ad-platforms/:id - delete
-adPlatforms.delete('/api/ad-platforms/:id', async (c) => {
+adPlatforms.delete('/api/ad-platforms/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteAdPlatform(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });

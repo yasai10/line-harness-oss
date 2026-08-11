@@ -13,6 +13,7 @@ import {
   cancelFriendReminder,
 } from '@line-crm/db';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const reminders = new Hono<Env>();
 
@@ -81,7 +82,7 @@ reminders.get('/api/reminders/:id', async (c) => {
   }
 });
 
-reminders.post('/api/reminders', async (c) => {
+reminders.post('/api/reminders', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{ name: string; description?: string; lineAccountId?: string | null }>();
     if (!body.name) return c.json({ success: false, error: 'name is required' }, 400);
@@ -98,7 +99,7 @@ reminders.post('/api/reminders', async (c) => {
   }
 });
 
-reminders.put('/api/reminders/:id', async (c) => {
+reminders.put('/api/reminders/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -112,7 +113,7 @@ reminders.put('/api/reminders/:id', async (c) => {
   }
 });
 
-reminders.delete('/api/reminders/:id', async (c) => {
+reminders.delete('/api/reminders/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteReminder(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -124,7 +125,7 @@ reminders.delete('/api/reminders/:id', async (c) => {
 
 // ========== リマインダステップ ==========
 
-reminders.post('/api/reminders/:id/steps', async (c) => {
+reminders.post('/api/reminders/:id/steps', requireRole('owner', 'admin'), async (c) => {
   try {
     const reminderId = c.req.param('id');
     const body = await c.req.json<{ offsetMinutes: number; messageType: string; messageContent: string }>();
@@ -142,7 +143,7 @@ reminders.post('/api/reminders/:id/steps', async (c) => {
   }
 });
 
-reminders.delete('/api/reminders/:reminderId/steps/:stepId', async (c) => {
+reminders.delete('/api/reminders/:reminderId/steps/:stepId', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteReminderStep(c.env.DB, c.req.param('stepId'));
     return c.json({ success: true, data: null });
@@ -154,7 +155,7 @@ reminders.delete('/api/reminders/:reminderId/steps/:stepId', async (c) => {
 
 // ========== 友だちリマインダ登録 ==========
 
-reminders.post('/api/reminders/:id/enroll/:friendId', async (c) => {
+reminders.post('/api/reminders/:id/enroll/:friendId', requireRole('owner', 'admin'), async (c) => {
   try {
     const reminderId = c.req.param('id');
     const friendId = c.req.param('friendId');
@@ -192,7 +193,7 @@ reminders.get('/api/friends/:friendId/reminders', async (c) => {
   }
 });
 
-reminders.delete('/api/friend-reminders/:id', async (c) => {
+reminders.delete('/api/friend-reminders/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await cancelFriendReminder(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });

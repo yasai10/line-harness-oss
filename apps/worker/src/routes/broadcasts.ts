@@ -305,7 +305,7 @@ broadcasts.get('/api/broadcasts/:id/per-account-stats', async (c) => {
 });
 
 // POST /api/broadcasts - create
-broadcasts.post('/api/broadcasts', async (c) => {
+broadcasts.post('/api/broadcasts', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<CreateBroadcastBody>();
     const idempotencyKey = c.req.header('Idempotency-Key')?.trim();
@@ -394,7 +394,7 @@ broadcasts.post('/api/broadcasts', async (c) => {
 });
 
 // PUT /api/broadcasts/:id - update draft
-broadcasts.put('/api/broadcasts/:id', async (c) => {
+broadcasts.put('/api/broadcasts/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const existing = await getBroadcastById(c.env.DB, id);
@@ -479,7 +479,7 @@ broadcasts.put('/api/broadcasts/:id', async (c) => {
 });
 
 // DELETE /api/broadcasts/:id - delete
-broadcasts.delete('/api/broadcasts/:id', async (c) => {
+broadcasts.delete('/api/broadcasts/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     await deleteBroadcast(c.env.DB, id);
@@ -991,7 +991,7 @@ broadcasts.post('/api/broadcasts/:id/fetch-insight', async (c) => {
 });
 
 // POST /api/broadcasts/:id/test-send — send to test recipients with 【テスト配信】 label
-broadcasts.post('/api/broadcasts/:id/test-send', async (c) => {
+broadcasts.post('/api/broadcasts/:id/test-send', requireRole('owner', 'admin'), async (c) => {
   const id = c.req.param('id');
   try {
     const broadcast = await getBroadcastById(c.env.DB, id);

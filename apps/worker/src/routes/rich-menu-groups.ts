@@ -270,7 +270,7 @@ richMenuGroups.get('/api/rich-menu-groups/external/:richMenuId/image', async (c)
 // 取り込み後は通常の編集画面で操作できる。
 //
 // query: { accountId, richMenuId }
-richMenuGroups.post('/api/rich-menu-groups/import', async (c) => {
+richMenuGroups.post('/api/rich-menu-groups/import', requireRole('owner', 'admin'), async (c) => {
   const accountId = c.req.query('accountId');
   const richMenuId = c.req.query('richMenuId');
   if (!accountId || !richMenuId) {
@@ -630,7 +630,7 @@ richMenuGroups.get('/api/rich-menu-groups/:groupId', async (c) => {
   return c.json({ success: true, data: serializeGroupWithPages(group) });
 });
 
-richMenuGroups.post('/api/rich-menu-groups', async (c) => {
+richMenuGroups.post('/api/rich-menu-groups', requireRole('owner', 'admin'), async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -645,7 +645,7 @@ richMenuGroups.post('/api/rich-menu-groups', async (c) => {
   return c.json({ success: true, data: serializeGroupWithPages(created) });
 });
 
-richMenuGroups.patch('/api/rich-menu-groups/:groupId', async (c) => {
+richMenuGroups.patch('/api/rich-menu-groups/:groupId', requireRole('owner', 'admin'), async (c) => {
   const groupId = c.req.param('groupId');
   const existing = await getRichMenuGroupById(c.env.DB, groupId);
   if (!existing) return c.json({ success: false, error: 'not found' }, 404);
@@ -692,7 +692,7 @@ richMenuGroups.delete('/api/rich-menu-groups/:groupId', requireRole('owner', 'ad
 
 // ----- Image upload -----
 
-richMenuGroups.post('/api/rich-menu-groups/:groupId/pages/:pageId/image', async (c) => {
+richMenuGroups.post('/api/rich-menu-groups/:groupId/pages/:pageId/image', requireRole('owner', 'admin'), async (c) => {
   const { groupId, pageId } = c.req.param();
   const contentType = c.req.header('content-type') ?? '';
   if (contentType !== 'image/png' && contentType !== 'image/jpeg') {

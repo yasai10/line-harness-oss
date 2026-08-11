@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const images = new Hono<Env>();
 
 // POST /api/images — upload image (base64 or binary)
-images.post('/api/images', async (c) => {
+images.post('/api/images', requireRole('owner', 'admin'), async (c) => {
   try {
     const contentType = c.req.header('Content-Type') || '';
 
@@ -90,7 +91,7 @@ images.get('/images/:key', async (c) => {
 });
 
 // DELETE /api/images/:key — delete image
-images.delete('/api/images/:key', async (c) => {
+images.delete('/api/images/:key', requireRole('owner', 'admin'), async (c) => {
   try {
     const key = c.req.param('key');
     await c.env.IMAGES.delete(key);

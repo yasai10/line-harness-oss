@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { LineClient } from '@line-crm/line-sdk';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const profileRefresh = new Hono<Env>();
 
@@ -16,7 +17,7 @@ const profileRefresh = new Hono<Env>();
  *
  * Caller (cron / curl) は hasMore=false まで offset を進めて再 POST する想定。
  */
-profileRefresh.post('/api/admin/refresh-profiles', async (c) => {
+profileRefresh.post('/api/admin/refresh-profiles', requireRole('owner', 'admin'), async (c) => {
   const offset = Number.parseInt(c.req.query('offset') ?? '0', 10);
   const limit = Math.min(Number.parseInt(c.req.query('limit') ?? '100', 10), 500);
   const accountIdFilter = c.req.query('accountId') ?? null;
@@ -128,7 +129,7 @@ profileRefresh.post('/api/admin/refresh-profiles', async (c) => {
  * messages_log がゼロ件であることを安全条件に強制する (誤って配信済の
  * broadcast を reset してしまうと送信痕跡が消えて重複配信のリスクがある)。
  */
-profileRefresh.post('/api/admin/broadcasts/:id/reset-to-draft', async (c) => {
+profileRefresh.post('/api/admin/broadcasts/:id/reset-to-draft', requireRole('owner', 'admin'), async (c) => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -389,7 +390,7 @@ profileRefresh.post('/api/admin/broadcast-coverage', async (c) => {
  * 用途: video-launch-rest の中で、test 100/500/2000/test10/直送り 等で既に
  * 動画 URL を受け取ってる人を除外して、二重配信を防ぐ。
  */
-profileRefresh.post('/api/admin/tag-remove-content-dups', async (c) => {
+profileRefresh.post('/api/admin/tag-remove-content-dups', requireRole('owner', 'admin'), async (c) => {
   const body = await c.req.json<{ tagName: string; contentSubstring: string }>();
   const db = c.env.DB;
 

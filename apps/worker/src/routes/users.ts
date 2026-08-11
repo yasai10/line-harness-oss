@@ -12,6 +12,7 @@ import {
 } from '@line-crm/db';
 import type { User as DbUser } from '@line-crm/db';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const users = new Hono<Env>();
 
@@ -54,7 +55,7 @@ users.get('/api/users/:id', async (c) => {
 });
 
 // POST /api/users - create
-users.post('/api/users', async (c) => {
+users.post('/api/users', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       email?: string | null;
@@ -72,7 +73,7 @@ users.post('/api/users', async (c) => {
 });
 
 // PUT /api/users/:id - update
-users.put('/api/users/:id', async (c) => {
+users.put('/api/users/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json<{
@@ -100,7 +101,7 @@ users.put('/api/users/:id', async (c) => {
 });
 
 // DELETE /api/users/:id - delete
-users.delete('/api/users/:id', async (c) => {
+users.delete('/api/users/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteUser(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -111,7 +112,7 @@ users.delete('/api/users/:id', async (c) => {
 });
 
 // POST /api/users/:id/link - link friend to user UUID
-users.post('/api/users/:id/link', async (c) => {
+users.post('/api/users/:id/link', requireRole('owner', 'admin'), async (c) => {
   try {
     const userId = c.req.param('id');
     const body = await c.req.json<{ friendId: string }>();
