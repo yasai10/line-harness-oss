@@ -33,6 +33,7 @@ import {
   type BookingStatus,
 } from '../services/booking-types.js';
 import { awardActivityMileage } from '../services/activity-mileage.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const booking = new Hono<Env>();
 
@@ -554,7 +555,7 @@ booking.get('/api/booking/admin/menus', async (c) => {
   return c.json({ menus: rows.results });
 });
 
-booking.post('/api/booking/admin/menus', async (c) => {
+booking.post('/api/booking/admin/menus', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const b = await c.req.json<{
@@ -599,7 +600,7 @@ booking.post('/api/booking/admin/menus', async (c) => {
   return c.json({ id }, 201);
 });
 
-booking.put('/api/booking/admin/menus/:id', async (c) => {
+booking.put('/api/booking/admin/menus/:id', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const id = c.req.param('id');
@@ -679,7 +680,7 @@ booking.put('/api/booking/admin/menus/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-booking.delete('/api/booking/admin/menus/:id', async (c) => {
+booking.delete('/api/booking/admin/menus/:id', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const id = c.req.param('id');
@@ -754,7 +755,7 @@ booking.get('/api/booking/admin/availability', async (c) => {
 // friend, straight from the iOS chat screen. Same shift/slot/conflict
 // validation as the LIFF flow, but NO min-lead-time check (the operator
 // may book a slot starting sooner than customers are allowed to).
-booking.post('/api/booking/admin/bookings', async (c) => {
+booking.post('/api/booking/admin/bookings', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const body = await c.req.json<{
@@ -908,7 +909,7 @@ booking.get('/api/booking/admin/staff', async (c) => {
   return c.json({ staff: rows.results });
 });
 
-booking.post('/api/booking/admin/staff', async (c) => {
+booking.post('/api/booking/admin/staff', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const b = await c.req.json<{
@@ -943,7 +944,7 @@ booking.post('/api/booking/admin/staff', async (c) => {
   return c.json({ id }, 201);
 });
 
-booking.put('/api/booking/admin/staff/:id', async (c) => {
+booking.put('/api/booking/admin/staff/:id', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const id = c.req.param('id');
@@ -981,7 +982,7 @@ booking.put('/api/booking/admin/staff/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-booking.delete('/api/booking/admin/staff/:id', async (c) => {
+booking.delete('/api/booking/admin/staff/:id', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const id = c.req.param('id');
@@ -1021,7 +1022,7 @@ booking.get('/api/booking/admin/staff/:id/menus', async (c) => {
   return c.json({ matrix: rows.results });
 });
 
-booking.put('/api/booking/admin/staff/:id/menus', async (c) => {
+booking.put('/api/booking/admin/staff/:id/menus', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1089,7 +1090,7 @@ booking.get('/api/booking/admin/staff/:id/availability-rules', async (c) => {
   return c.json({ rules: rows.results });
 });
 
-booking.put('/api/booking/admin/staff/:id/availability-rules', async (c) => {
+booking.put('/api/booking/admin/staff/:id/availability-rules', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1155,7 +1156,7 @@ booking.get('/api/booking/admin/staff/:id/google-calendar', async (c) => {
   });
 });
 
-booking.put('/api/booking/admin/staff/:id/google-calendar', async (c) => {
+booking.put('/api/booking/admin/staff/:id/google-calendar', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1213,7 +1214,7 @@ booking.put('/api/booking/admin/staff/:id/google-calendar', async (c) => {
   return c.json({ ok: true, calendar_id: calendarId, last_verified_at: now });
 });
 
-booking.delete('/api/booking/admin/staff/:id/google-calendar', async (c) => {
+booking.delete('/api/booking/admin/staff/:id/google-calendar', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1254,7 +1255,7 @@ booking.get('/api/booking/admin/staff/:id/shifts', async (c) => {
   return c.json({ shifts: rows.results });
 });
 
-booking.put('/api/booking/admin/staff/:id/shifts', async (c) => {
+booking.put('/api/booking/admin/staff/:id/shifts', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1281,7 +1282,7 @@ booking.put('/api/booking/admin/staff/:id/shifts', async (c) => {
   return c.json({ ok: true, count: b.shifts.length });
 });
 
-booking.delete('/api/booking/admin/staff/:id/shifts/:shiftId', async (c) => {
+booking.delete('/api/booking/admin/staff/:id/shifts/:shiftId', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1296,7 +1297,7 @@ booking.delete('/api/booking/admin/staff/:id/shifts/:shiftId', async (c) => {
   return c.json({ ok: true });
 });
 
-booking.post('/api/booking/admin/staff/:id/shifts/generate', async (c) => {
+booking.post('/api/booking/admin/staff/:id/shifts/generate', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const staffId = c.req.param('id');
@@ -1373,7 +1374,7 @@ booking.get('/api/booking/admin/requests', async (c) => {
   return c.json({ requests: rows.results });
 });
 
-booking.patch('/api/booking/admin/requests/:id', async (c) => {
+booking.patch('/api/booking/admin/requests/:id', requireRole('owner', 'admin'), async (c) => {
   const accountId = await resolveAccountIdAdmin(c);
   if (!accountId) return c.json({ error: 'missing_account_id' }, 400);
   const id = c.req.param('id');

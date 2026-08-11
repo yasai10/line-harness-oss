@@ -194,3 +194,43 @@ describe('PUT /api/affiliate-offers/:id', () => {
     );
   });
 });
+
+// アフィリエイトオファーは rewardAmount / rewardMiles = 紹介者への報酬額そのもの。
+// 既に requireRole が付いている PUT /api/affiliates/:id (commissionRate) と同じ
+// 金銭系なので、作成・更新は owner / admin 限定。閲覧 (GET) は staff のまま。
+describe('/api/affiliate-offers role guard', () => {
+  const STAFF_KEY = 'test-staff-key';
+
+  function reqAsStaff(method: string, path: string, body?: unknown) {
+    dbMocks.getStaffByApiKey.mockResolvedValue({ id: 'staff-1', name: 'Staff', role: 'staff' });
+    const headers = new Headers({ Authorization: `Bearer ${STAFF_KEY}` });
+    if (body !== undefined) headers.set('Content-Type', 'application/json');
+    return worker.fetch(
+      new Request(`https://worker.example.com${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      }),
+      env,
+      { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext,
+    );
+  }
+
+  it('staff cannot create an offer', async () => {
+    const res = await reqAsStaff('POST', '/api/affiliate-offers', { name: 'ずる', rewardAmount: 999999 });
+    expect(res.status).toBe(403);
+    expect(dbMocks.createAffiliateOffer).not.toHaveBeenCalled();
+  });
+
+  it('staff cannot update an offer', async () => {
+    const res = await reqAsStaff('PUT', '/api/affiliate-offers/off-1', { rewardMiles: 999999 });
+    expect(res.status).toBe(403);
+    expect(dbMocks.updateAffiliateOffer).not.toHaveBeenCalled();
+  });
+
+  it('staff can still list offers', async () => {
+    dbMocks.listAffiliateOffers.mockResolvedValue([]);
+    const res = await reqAsStaff('GET', '/api/affiliate-offers');
+    expect(res.status).toBe(200);
+  });
+});

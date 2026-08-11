@@ -40,6 +40,7 @@ import {
   type EventBookingAction,
 } from '../services/event-booking-state.js';
 import { awardActivityMileage } from '../services/activity-mileage.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const events = new Hono<Env>();
 
@@ -151,7 +152,7 @@ function validateEventInput(
 // Admin: events CRUD
 // ============================================================
 
-events.post('/api/events/admin/events', async (c) => {
+events.post('/api/events/admin/events', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -269,7 +270,7 @@ events.get('/api/events/admin/events/:id', async (c) => {
   return c.json(row);
 });
 
-events.put('/api/events/admin/events/:id', async (c) => {
+events.put('/api/events/admin/events/:id', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const id = c.req.param('id');
@@ -426,7 +427,7 @@ async function rebuildRemindersForSlot(db: D1Database, slot_id: string): Promise
   }
 }
 
-events.delete('/api/events/admin/events/:id', async (c) => {
+events.delete('/api/events/admin/events/:id', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const id = c.req.param('id');
@@ -530,7 +531,7 @@ events.get('/api/events/admin/events/:id/slots', async (c) => {
   return c.json({ items: results ?? [] });
 });
 
-events.post('/api/events/admin/events/:id/slots', async (c) => {
+events.post('/api/events/admin/events/:id/slots', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');
@@ -566,7 +567,7 @@ events.post('/api/events/admin/events/:id/slots', async (c) => {
   return c.json({ items: inserted }, 201);
 });
 
-events.put('/api/events/admin/events/:id/slots/:slotId', async (c) => {
+events.put('/api/events/admin/events/:id/slots/:slotId', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');
@@ -1149,7 +1150,7 @@ events.post('/api/liff/events/:id/bookings', async (c) => {
 });
 
 
-events.delete('/api/events/admin/events/:id/slots/:slotId', async (c) => {
+events.delete('/api/events/admin/events/:id/slots/:slotId', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');
@@ -1304,7 +1305,7 @@ async function notifyBookingFriend(
   }
 }
 
-events.post('/api/events/admin/events/:id/bookings/:bookingId/decide', async (c) => {
+events.post('/api/events/admin/events/:id/bookings/:bookingId/decide', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');
@@ -1377,7 +1378,7 @@ events.post('/api/events/admin/events/:id/bookings/:bookingId/decide', async (c)
   return c.json(updated);
 });
 
-events.post('/api/events/admin/events/:id/bookings/:bookingId/cancel', async (c) => {
+events.post('/api/events/admin/events/:id/bookings/:bookingId/cancel', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');
@@ -1403,7 +1404,7 @@ events.post('/api/events/admin/events/:id/bookings/:bookingId/cancel', async (c)
   return c.json({ ok: true });
 });
 
-events.put('/api/events/admin/events/:id/bookings/:bookingId', async (c) => {
+events.put('/api/events/admin/events/:id/bookings/:bookingId', requireRole('owner', 'admin'), async (c) => {
   const account_id = getAccountId(c);
   if (!account_id) return bad(c, 'account_id_required', 400);
   const event_id = c.req.param('id');

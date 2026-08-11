@@ -777,11 +777,14 @@ function makeEventDb(state: {
   return db;
 }
 
-function setupApp(state: { events: EventRow[]; slots?: SlotRow[]; bookings?: BookingRow[] }) {
+function setupApp(
+  state: { events: EventRow[]; slots?: SlotRow[]; bookings?: BookingRow[] },
+  role: 'owner' | 'admin' | 'staff' = 'owner',
+) {
   const app = new Hono<TestEnv>();
   const db = makeEventDb(state);
   app.use('*', async (c, next) => {
-    c.set('staff', { id: 'staff-1', role: 'owner' });
+    c.set('staff', { id: 'staff-1', role });
     c.env = { DB: db } as TestEnv['Bindings'];
     await next();
   });
@@ -2128,3 +2131,60 @@ function baseEvent(over: Partial<EventRow>): EventRow {
     ...over,
   };
 }
+
+// /api/events/admin/* の書き込み系は本番のイベント枠・予約承認を直接動かすので
+// owner / admin 限定。staff は 403 で弾かれ、state (= DB) に一切書かないこと。
+// GET (閲覧) と LIFF 経路は staff / 匿名のまま使えることも合わせて確認する。
+describe('/api/events/admin/* role guard', () => {
+  test('staff cannot create an event and nothing is written', async () => {
+    const state = { events: [] as EventRow[] };
+    const res = await setupApp(state, 'staff').request('/api/events/admin/events?account_id=la1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'AAA説明会' }),
+    });
+    expect(res.status).toBe(403);
+    expect(state.events).toHaveLength(0);
+  });
+
+  test('admin can create an event', async () => {
+    const state = { events: [] as EventRow[] };
+    const res = await setupApp(state, 'admin').request('/api/events/admin/events?account_id=la1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'AAA説明会' }),
+    });
+    expect(res.status).toBe(201);
+    expect(state.events).toHaveLength(1);
+  });
+
+  test('staff cannot delete an event', async () => {
+    const state = { events: [baseEvent({ id: 'e1' })] };
+    const res = await setupApp(state, 'staff').request(
+      '/api/events/admin/events/e1?account_id=la1',
+      { method: 'DELETE' },
+    );
+    expect(res.status).toBe(403);
+    expect(state.events[0].deleted_at).toBeNull();
+  });
+
+  test('staff cannot add a slot', async () => {
+    const state = { events: [baseEvent({ id: 'e1' })], slots: [] as SlotRow[] };
+    const res = await setupApp(state, 'staff').request(
+      '/api/events/admin/events/e1/slots?account_id=la1',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ starts_at: '2026-09-01T10:00:00.000Z', capacity: 10 }),
+      },
+    );
+    expect(res.status).toBe(403);
+    expect(state.slots).toHaveLength(0);
+  });
+
+  test('staff can still read the admin event list (GET is unguarded)', async () => {
+    const state = { events: [baseEvent({ id: 'e1' })] };
+    const res = await setupApp(state, 'staff').request('/api/events/admin/events?account_id=la1');
+    expect(res.status).toBe(200);
+  });
+});

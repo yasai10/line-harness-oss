@@ -14,6 +14,7 @@ import {
 } from '@line-crm/db';
 import { GoogleCalendarClient } from '../services/google-calendar.js';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const calendar = new Hono<Env>();
 
@@ -39,7 +40,7 @@ calendar.get('/api/integrations/google-calendar', async (c) => {
   }
 });
 
-calendar.post('/api/integrations/google-calendar/connect', async (c) => {
+calendar.post('/api/integrations/google-calendar/connect', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{ calendarId: string; authType: string; accessToken?: string; refreshToken?: string; apiKey?: string }>();
     if (!body.calendarId) return c.json({ success: false, error: 'calendarId is required' }, 400);
@@ -54,7 +55,7 @@ calendar.post('/api/integrations/google-calendar/connect', async (c) => {
   }
 });
 
-calendar.delete('/api/integrations/google-calendar/:id', async (c) => {
+calendar.delete('/api/integrations/google-calendar/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     await deleteCalendarConnection(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
@@ -172,7 +173,7 @@ calendar.get('/api/integrations/google-calendar/bookings', async (c) => {
   }
 });
 
-calendar.post('/api/integrations/google-calendar/book', async (c) => {
+calendar.post('/api/integrations/google-calendar/book', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{ connectionId: string; friendId?: string; title: string; startAt: string; endAt: string; description?: string; metadata?: Record<string, unknown> }>();
     if (!body.connectionId || !body.title || !body.startAt || !body.endAt) {
@@ -228,7 +229,7 @@ calendar.post('/api/integrations/google-calendar/book', async (c) => {
   }
 });
 
-calendar.put('/api/integrations/google-calendar/bookings/:id/status', async (c) => {
+calendar.put('/api/integrations/google-calendar/bookings/:id/status', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const { status } = await c.req.json<{ status: string }>();

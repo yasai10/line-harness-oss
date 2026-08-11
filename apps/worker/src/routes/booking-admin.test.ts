@@ -18,9 +18,18 @@ vi.mock('../services/booking-notifier.js', () => notifierMocks);
 
 const { default: booking } = await import('./booking.js');
 
-function makeApp(db: unknown) {
-  const app = new Hono();
-  app.route('/', booking);
+type Role = 'owner' | 'admin' | 'staff';
+
+// /api/booking/admin/* の書き込み系には requireRole('owner','admin') が付いている。
+// 本番では index.ts の authMiddleware が staff をセットするので、テストでも同じ
+// 前提を作る (既定 owner。role guard の検証だけ 'staff' を渡す)。
+function makeApp(db: unknown, role: Role = 'owner') {
+  const app = new Hono<{ Variables: { staff: { id: string; name: string; role: Role } } }>();
+  app.use('*', async (c, next) => {
+    c.set('staff', { id: 'test-staff', name: 'Test Staff', role });
+    await next();
+  });
+  app.route('/', booking as never);
   return { app, env: { DB: db } };
 }
 
@@ -320,5 +329,95 @@ describe('jstDayWindowUtc', () => {
     const { jstDayWindowUtc } = await import('./booking.js');
     expect(jstDayWindowUtc('2026-09-10').startUtc).toBe('2026-09-09T15:00:00.000Z');
     expect(jstDayWindowUtc('2026-11-09').startUtc).toBe('2026-11-08T15:00:00.000Z');
+  });
+});
+
+// /api/booking/admin/* の書き込み系はメニュー・スタッフ・シフト・予約承認という
+// 本番の受付体制そのものを変える操作なので owner / admin 限定。staff は 403 で
+// 弾かれ、D1 に prepare すら到達しないこと。GET (空き枠・一覧の閲覧) は現場の
+// 日常業務なので staff のまま使えることを合わせて確認する。
+describe('/api/booking/admin/* role guard', () => {
+  function countingDb() {
+    const calls: string[] = [];
+    return {
+      calls,
+      prepare(sql: string) {
+        calls.push(sql);
+        return {
+          bind: () => ({
+            first: async () => null,
+            all: async () => ({ results: [] }),
+            run: async () => ({ meta: { changes: 0 } }),
+          }),
+        };
+      },
+    };
+  }
+
+  const writes: [string, string, unknown][] = [
+    ['POST', '/api/booking/admin/menus?account_id=acc1', { name: 'カット', duration_minutes: 30 }],
+    ['PUT', '/api/booking/admin/menus/m1?account_id=acc1', { name: 'カット' }],
+    ['DELETE', '/api/booking/admin/menus/m1?account_id=acc1', undefined],
+    ['POST', '/api/booking/admin/staff?account_id=acc1', { display_name: 'スタッフA' }],
+    ['DELETE', '/api/booking/admin/staff/s1?account_id=acc1', undefined],
+    ['PUT', '/api/booking/admin/staff/s1/shifts?account_id=acc1', { shifts: [] }],
+    ['POST', '/api/booking/admin/staff/s1/shifts/generate?account_id=acc1', { from: '2026-09-01', to: '2026-09-07' }],
+    ['PATCH', '/api/booking/admin/requests/r1?account_id=acc1', { status: 'confirmed' }],
+  ];
+
+  for (const [method, path, body] of writes) {
+    test(`staff is rejected with 403 on ${method} ${path.split('?')[0]}`, async () => {
+      const db = countingDb();
+      const { app, env } = makeApp(db, 'staff');
+      const res = await app.request(
+        path,
+        {
+          method,
+          headers: body ? { 'content-type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        },
+        env,
+      );
+      expect(res.status).toBe(403);
+      expect(db.calls).toHaveLength(0);
+    });
+  }
+
+  test('admin can create a menu', async () => {
+    const { app, env } = makeApp(emptyDb, 'admin');
+    const res = await app.request(
+      '/api/booking/admin/menus?account_id=acc1',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'カット', duration_minutes: 30 }),
+      },
+      env,
+    );
+    expect(res.status).not.toBe(403);
+  });
+
+  test('staff can still read availability (GET is unguarded)', async () => {
+    const { app, env } = makeApp(emptyDb, 'staff');
+    const res = await app.request(
+      '/api/booking/admin/availability?account_id=acc1&menu_id=m1&from=2026-07-08&to=2026-07-14',
+      {},
+      env,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test('the LIFF booking request path stays outside the role guard', async () => {
+    const { app, env } = makeApp(emptyDb, 'staff');
+    const res = await app.request(
+      '/api/liff/booking/requests',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+      env,
+    );
+    expect(res.status).not.toBe(403);
   });
 });
