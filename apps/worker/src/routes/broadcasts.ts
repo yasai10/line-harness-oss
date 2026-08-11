@@ -20,6 +20,7 @@ import {
   hasRecipientVariables,
   renderBroadcastMessageContent,
 } from '../services/render-message.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const broadcasts = new Hono<Env>();
 
@@ -496,7 +497,7 @@ broadcasts.delete('/api/broadcasts/:id', async (c) => {
 // 進入しうる (2026-04-10 19:50 の重複配信事故 broadcast 0069eb9f / 57c9667d)。
 // 既存の lock 修正 (a27ad9f / bffcdf8 / 3ac2fec) は cron / scheduled 経路を
 // 守ったが、API direct 経路は未対応のままだった。
-broadcasts.post('/api/broadcasts/:id/send', async (c) => {
+broadcasts.post('/api/broadcasts/:id/send', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const existing = await getBroadcastById(c.env.DB, id);
@@ -728,7 +729,7 @@ broadcasts.post('/api/broadcasts/:id/send', async (c) => {
 });
 
 // POST /api/broadcasts/:id/send-segment - send to a filtered segment (常にキュー方式)
-broadcasts.post('/api/broadcasts/:id/send-segment', async (c) => {
+broadcasts.post('/api/broadcasts/:id/send-segment', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const existing = await getBroadcastById(c.env.DB, id);

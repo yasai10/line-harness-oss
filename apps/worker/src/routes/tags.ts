@@ -9,6 +9,7 @@ import {
 } from '@line-crm/db';
 import type { Tag as DbTag } from '@line-crm/db';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const tags = new Hono<Env>();
 
@@ -120,7 +121,7 @@ tags.post('/api/tags', async (c) => {
 // DELETE /api/tags/:id - delete tag
 // friend_tags rows cascade via FK (ON DELETE CASCADE), but affiliate_offers.tag_id
 // references tags without a cascade — D1 enforces it, so surface that as 409.
-tags.delete('/api/tags/:id', async (c) => {
+tags.delete('/api/tags/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     await deleteTag(c.env.DB, id);

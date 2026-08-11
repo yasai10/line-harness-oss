@@ -65,9 +65,17 @@ function makeScenarioDb(rows: ScenarioRow[]) {
   return { db, calls };
 }
 
-function setupApp(db: D1Database) {
-  const app = new Hono<{ Bindings: { DB: D1Database } }>();
+type Role = 'owner' | 'admin' | 'staff';
+
+type TestEnv = {
+  Variables: { staff: { id: string; role: Role } };
+  Bindings: { DB: D1Database };
+};
+
+function setupApp(db: D1Database, role: Role = 'owner') {
+  const app = new Hono<TestEnv>();
   app.use('*', async (c, next) => {
+    c.set('staff', { id: 'test-staff', role });
     c.env = { DB: db };
     await next();
   });
@@ -141,5 +149,117 @@ describe('GET /api/scenarios?lineAccountId=X', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean; data: unknown[] };
     expect(body.data).toEqual([]);
+  });
+});
+
+// ----- role guard -----
+// シナリオは登録した友だちへ自動配信が走る = 本番影響のある設定なので、
+// 作成・編集・削除・手動登録は owner / admin 限定。閲覧のみ staff にも開放。
+
+const createdScenarioRow = {
+  id: 's-new',
+  name: '新規',
+  line_account_id: null,
+  ...rowBase,
+};
+
+describe('POST /api/scenarios role guard', () => {
+  const payload = { name: '新規', triggerType: 'friend_add' };
+
+  test('staff is rejected with 403 and nothing is created', async () => {
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'staff').request('/api/scenarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.createScenario).not.toHaveBeenCalled();
+  });
+
+  test('admin can create (201)', async () => {
+    dbMocks.createScenario.mockResolvedValue(createdScenarioRow);
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'admin').request('/api/scenarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(201);
+    expect(dbMocks.createScenario).toHaveBeenCalledTimes(1);
+  });
+
+  test('owner can create (201)', async () => {
+    dbMocks.createScenario.mockResolvedValue(createdScenarioRow);
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'owner').request('/api/scenarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('POST /api/scenarios/:id/enroll/:friendId role guard', () => {
+  const enrollment = {
+    id: 'fs-1',
+    friend_id: 'f-1',
+    scenario_id: 's-1',
+    current_step_order: 0,
+    status: 'active',
+    started_at: '2026-08-11T00:00:00.000',
+    next_delivery_at: null,
+    updated_at: '2026-08-11T00:00:00.000',
+  };
+
+  test('staff cannot enroll a friend into a scenario (403)', async () => {
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'staff').request('/api/scenarios/s-1/enroll/f-1', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(403);
+    // 自動配信が起動する enrollFriendInScenario まで到達していないこと
+    expect(dbMocks.enrollFriendInScenario).not.toHaveBeenCalled();
+  });
+
+  test('admin can enroll a friend (201)', async () => {
+    dbMocks.getScenarioById.mockResolvedValue({ id: 's-1' });
+    dbMocks.getFriendById.mockResolvedValue({ id: 'f-1' });
+    dbMocks.enrollFriendInScenario.mockResolvedValue(enrollment);
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'admin').request('/api/scenarios/s-1/enroll/f-1', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(201);
+    expect(dbMocks.enrollFriendInScenario).toHaveBeenCalledWith(expect.anything(), 'f-1', 's-1');
+  });
+});
+
+describe('scenario mutations are owner/admin only', () => {
+  test.each([
+    ['PUT', '/api/scenarios/s-1', JSON.stringify({ name: 'x' })],
+    ['DELETE', '/api/scenarios/s-1', undefined],
+    ['POST', '/api/scenarios/s-1/steps', JSON.stringify({ stepOrder: 1 })],
+    ['PUT', '/api/scenarios/s-1/steps/st-1', JSON.stringify({ stepOrder: 1 })],
+    ['DELETE', '/api/scenarios/s-1/steps/st-1', undefined],
+    ['POST', '/api/scenarios/s-1/steps/reorder', JSON.stringify({ stepIds: [] })],
+  ])('%s %s returns 403 for staff', async (method, path, body) => {
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'staff').request(path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body,
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('scenario reads stay open to staff', () => {
+  test('staff can still list scenarios', async () => {
+    dbMocks.getScenarios.mockResolvedValue([]);
+    const { db } = makeScenarioDb([]);
+    const res = await setupApp(db, 'staff').request('/api/scenarios');
+    expect(res.status).toBe(200);
   });
 });

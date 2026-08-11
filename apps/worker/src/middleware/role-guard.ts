@@ -1,10 +1,10 @@
-import type { Context, Next } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../index.js';
 
 type Role = 'owner' | 'admin' | 'staff';
 
-export function requireRole(...allowed: Role[]) {
-  return async (c: Context<Env>, next: Next): Promise<Response | void> => {
+export function requireRole(...allowed: Role[]): MiddlewareHandler<Env> {
+  return async (c, next) => {
     const staff = c.get('staff');
     if (!staff || !allowed.includes(staff.role)) {
       return c.json(

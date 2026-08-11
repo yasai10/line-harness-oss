@@ -65,10 +65,12 @@ function makeMinimalDbStub(): D1Database {
   } as unknown as D1Database;
 }
 
-function setupApp(opts: { r2?: R2Bucket; db?: D1Database } = {}) {
+function setupApp(
+  opts: { r2?: R2Bucket; db?: D1Database; role?: 'owner' | 'admin' | 'staff' } = {},
+) {
   const app = new Hono<TestEnv>();
   app.use('*', async (c, next) => {
-    c.set('staff', { id: 'staff-1', role: 'owner' });
+    c.set('staff', { id: 'staff-1', role: opts.role ?? 'owner' });
     c.env = { DB: opts.db ?? makeMinimalDbStub(), IMAGES: opts.r2 ?? makeR2Stub() };
     await next();
   });
@@ -500,5 +502,75 @@ describe('POST /api/rich-menu-groups/:groupId/publish', () => {
     const res = await app.request('/api/rich-menu-groups/gid12345-aaaa/publish', { method: 'POST' });
     expect(res.status).toBe(500);
     expect(dbMocks.releasePublishLock).toHaveBeenCalledWith(expect.anything(), 'gid12345-aaaa');
+  });
+});
+
+// ----- role guard -----
+// リッチメニューの公開 / 公開解除 / 友だちへの一括適用 / 削除は LINE 側の
+// 実表示を書き換える本番影響操作なので owner / admin 限定。
+
+describe('rich menu group publish/unpublish/apply-to-tag role guard', () => {
+  test('staff cannot publish (403, LINE 側へは一切触れない)', async () => {
+    const app = setupApp({ role: 'staff' });
+    const res = await app.request('/api/rich-menu-groups/g1/publish', { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(dbMocks.getRichMenuGroupWithPages).not.toHaveBeenCalled();
+    expect(dbMocks.acquirePublishLock).not.toHaveBeenCalled();
+  });
+
+  test('admin passes the publish guard and reaches the handler', async () => {
+    // 実公開は LINE API を叩くため、ここでは guard を通過してハンドラ本体
+    // (存在チェック) に到達すること = 403 ではないことを確認する。
+    dbMocks.getRichMenuGroupWithPages.mockResolvedValue(null);
+    const app = setupApp({ role: 'admin' });
+    const res = await app.request('/api/rich-menu-groups/missing/publish', { method: 'POST' });
+    expect(res.status).toBe(404);
+    expect(dbMocks.getRichMenuGroupWithPages).toHaveBeenCalled();
+  });
+
+  test('staff cannot unpublish (403)', async () => {
+    const app = setupApp({ role: 'staff' });
+    const res = await app.request('/api/rich-menu-groups/g1/unpublish', { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(dbMocks.getRichMenuGroupWithPages).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot apply a menu to a tag (403)', async () => {
+    const app = setupApp({ role: 'staff' });
+    const res = await app.request('/api/rich-menu-groups/g1/apply-to-tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tagId: 't1' }),
+    });
+    expect(res.status).toBe(403);
+    expect(dbMocks.getRichMenuGroupWithPages).not.toHaveBeenCalled();
+  });
+});
+
+describe('DELETE /api/rich-menu-groups/:groupId role guard', () => {
+  test('staff cannot delete a group (403)', async () => {
+    dbMocks.getRichMenuGroupById.mockResolvedValue({ id: 'g1', status: 'draft' });
+    const app = setupApp({ role: 'staff' });
+    const res = await app.request('/api/rich-menu-groups/g1', { method: 'DELETE' });
+    expect(res.status).toBe(403);
+    expect(dbMocks.deleteRichMenuGroup).not.toHaveBeenCalled();
+  });
+
+  test('admin can delete a draft group (200)', async () => {
+    dbMocks.getRichMenuGroupById.mockResolvedValue({ id: 'g1', status: 'draft' });
+    dbMocks.deleteRichMenuGroup.mockResolvedValue(true);
+    const app = setupApp({ role: 'admin' });
+    const res = await app.request('/api/rich-menu-groups/g1', { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(dbMocks.deleteRichMenuGroup).toHaveBeenCalled();
+  });
+});
+
+describe('rich menu group reads/drafts stay open to staff', () => {
+  test('staff can still list groups', async () => {
+    dbMocks.getRichMenuGroups.mockResolvedValue([]);
+    const app = setupApp({ role: 'staff' });
+    const res = await app.request('/api/rich-menu-groups?accountId=acc-1');
+    expect(res.status).toBe(200);
   });
 });
