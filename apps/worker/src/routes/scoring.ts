@@ -118,7 +118,7 @@ scoring.post('/api/mileage/events', async (c) => {
   }
 });
 
-scoring.post('/api/mileage/rules', async (c) => {
+scoring.post('/api/mileage/rules', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name?: string;
@@ -154,7 +154,7 @@ scoring.post('/api/mileage/rules', async (c) => {
   }
 });
 
-scoring.put('/api/mileage/rules/:id', async (c) => {
+scoring.put('/api/mileage/rules/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       name?: string;
@@ -185,7 +185,7 @@ scoring.put('/api/mileage/rules/:id', async (c) => {
   }
 });
 
-scoring.delete('/api/mileage/rules/:id', async (c) => {
+scoring.delete('/api/mileage/rules/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const existing = await getMileageRuleById(c.env.DB, c.req.param('id'));
     if (!existing) return c.json({ success: false, error: 'Not found' }, 404);

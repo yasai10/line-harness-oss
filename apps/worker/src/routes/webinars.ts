@@ -57,6 +57,7 @@ import {
   awardWebinarPositionMileage,
 } from '../services/webinar-mileage.js';
 import type { Env } from '../index.js';
+import { requireRole } from '../middleware/role-guard.js';
 
 const webinarRoutes = new Hono<Env>();
 
@@ -737,7 +738,7 @@ webinarRoutes.get('/api/webinars', async (c) => {
   }
 });
 
-webinarRoutes.post('/api/webinars', async (c) => {
+webinarRoutes.post('/api/webinars', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<WebinarBody>();
     const input = validateWebinarBody(body, { requireCore: true });
@@ -765,7 +766,7 @@ webinarRoutes.get('/api/webinars/:id', async (c) => {
   }
 });
 
-webinarRoutes.put('/api/webinars/:id', async (c) => {
+webinarRoutes.put('/api/webinars/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const row = await getWebinarById(c.env.DB, id);
@@ -785,7 +786,7 @@ webinarRoutes.put('/api/webinars/:id', async (c) => {
   }
 });
 
-webinarRoutes.delete('/api/webinars/:id', async (c) => {
+webinarRoutes.delete('/api/webinars/:id', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const row = await getWebinarById(c.env.DB, id);
@@ -816,7 +817,7 @@ webinarRoutes.get('/api/webinars/:id/comments', async (c) => {
   }
 });
 
-webinarRoutes.put('/api/webinars/:id/comments', async (c) => {
+webinarRoutes.put('/api/webinars/:id/comments', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const row = await getWebinarById(c.env.DB, id);
@@ -876,7 +877,7 @@ webinarRoutes.get('/api/webinars/:id/ctas', async (c) => {
 
 // CTA カード一括置換。kind='form' は forms 実在チェック、kind='url' は https? 必須。
 // 全要素検証 → 不正が1件でもあれば何も書かない (comments と同じ all-or-nothing)。
-webinarRoutes.put('/api/webinars/:id/ctas', async (c) => {
+webinarRoutes.put('/api/webinars/:id/ctas', requireRole('owner', 'admin'), async (c) => {
   try {
     const id = c.req.param('id');
     const row = await getWebinarById(c.env.DB, id);

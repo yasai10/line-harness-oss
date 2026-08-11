@@ -46,7 +46,7 @@ tags.get('/api/tags', async (c) => {
 });
 
 // PATCH /api/tags/:id/mileage - configure a one-time tag reward and/or tier multiplier.
-tags.patch('/api/tags/:id/mileage', async (c) => {
+tags.patch('/api/tags/:id/mileage', requireRole('owner', 'admin'), async (c) => {
   try {
     const body = await c.req.json<{
       rewardMiles?: unknown;

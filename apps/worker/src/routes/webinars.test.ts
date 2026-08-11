@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, vi } from 'vitest';
+import { Hono } from 'hono';
 
 const dbMocks = {
   getWebinars: vi.fn(),
@@ -80,8 +81,27 @@ const env = {
 };
 const execCtx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 
-function req(path: string, init?: RequestInit) {
-  return webinarRoutes.request(path, init, env, execCtx);
+type Role = 'owner' | 'admin' | 'staff';
+type TestEnv = {
+  Variables: { staff: { id: string; name: string; role: Role } };
+  Bindings: typeof env;
+};
+
+// 管理系 (/api/webinars/*) には requireRole('owner','admin') が付いているので、
+// 素の webinarRoutes.request では staff 情報が無く常に 403 になる。index.ts の
+// authMiddleware 相当として staff を注入する薄いラッパーを噛ませる (既定 owner)。
+function appWithRole(role: Role) {
+  const app = new Hono<TestEnv>();
+  app.use('*', async (c, next) => {
+    c.set('staff', { id: 'test-staff', name: 'Test Staff', role });
+    await next();
+  });
+  app.route('/', webinarRoutes as unknown as Hono<TestEnv>);
+  return app;
+}
+
+function req(path: string, init?: RequestInit, role: Role = 'owner') {
+  return appWithRole(role).request(path, init, env, execCtx);
 }
 
 beforeEach(() => {
@@ -974,5 +994,67 @@ describe('webinar CTA cards', () => {
       id: 'cta1', atSeconds: 300, kind: 'form', title: '個別導入診断',
       body: '限定枠です', buttonLabel: '診断を受ける', autoOpen: true, formId: 'form-1', url: null,
     }]);
+  });
+});
+
+// /api/webinars/* の管理系は本番のウェビナー定義・台本コメント・CTA (申込導線) を
+// 直接書き換えるので owner / admin 限定。staff は 403 で弾かれ DB に到達しない。
+// 閲覧 (GET) と LIFF 視聴者経路は従来どおり通ること。
+describe('/api/webinars/* role guard', () => {
+  const writes: [string, string, string, unknown][] = [
+    ['createWebinar', 'POST', '/api/webinars', {
+      title: 'テストウェビナー', slug: 'new-webinar', durationSeconds: 7200,
+      schedule: [{ type: 'once', at: '2026-07-29T20:00:00+09:00' }],
+    }],
+    ['updateWebinar', 'PUT', '/api/webinars/w1', { title: '別タイトル' }],
+    ['deleteWebinar', 'DELETE', '/api/webinars/w1', undefined],
+    ['replaceWebinarComments', 'PUT', '/api/webinars/w1/comments', { comments: [] }],
+    ['replaceWebinarCtas', 'PUT', '/api/webinars/w1/ctas', { ctas: [] }],
+  ];
+
+  for (const [dbFn, method, path, body] of writes) {
+    test(`staff is rejected with 403 on ${method} ${path}`, async () => {
+      dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+      dbMocks.getWebinarBySlug.mockResolvedValue(null);
+      const res = await req(
+        path,
+        {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        },
+        'staff',
+      );
+      expect(res.status).toBe(403);
+      expect(dbMocks[dbFn as keyof typeof dbMocks]).not.toHaveBeenCalled();
+    });
+  }
+
+  test('admin can delete a webinar', async () => {
+    dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+    const res = await req('/api/webinars/w1', { method: 'DELETE' }, 'admin');
+    expect(res.status).toBe(200);
+    expect(dbMocks.deleteWebinar).toHaveBeenCalledWith(expect.anything(), 'w1');
+  });
+
+  test('staff can still read the webinar list and CTAs (GET is unguarded)', async () => {
+    dbMocks.getWebinars.mockResolvedValue([]);
+    expect((await req('/api/webinars', undefined, 'staff')).status).toBe(200);
+    dbMocks.getWebinarById.mockResolvedValue(makeWebinar());
+    dbMocks.getWebinarCtas.mockResolvedValue([]);
+    expect((await req('/api/webinars/w1/ctas', undefined, 'staff')).status).toBe(200);
+  });
+
+  test('the LIFF viewer paths stay outside the role guard', async () => {
+    const res = await req(
+      '/api/liff/webinars/test-webinar/heartbeat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ positionSeconds: 10 }),
+      },
+      'staff',
+    );
+    expect(res.status).not.toBe(403);
   });
 });
