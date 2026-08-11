@@ -47,9 +47,15 @@ const row = {
   alt_text: null,
 };
 
-function setupApp() {
-  const app = new Hono<{ Bindings: { DB: D1Database } }>();
+// POST /api/broadcasts は requireRole('owner','admin') 配下なので、
+// 冪等性の検証にはロールを注入したうえでリクエストする必要がある。
+function setupApp(role: 'owner' | 'admin' | 'staff' = 'owner') {
+  const app = new Hono<{
+    Variables: { staff: { id: string; role: 'owner' | 'admin' | 'staff' } };
+    Bindings: { DB: D1Database };
+  }>();
   app.use('*', async (c, next) => {
+    c.set('staff', { id: 'test-staff', role });
     c.env = { DB: {} as D1Database };
     await next();
   });

@@ -159,8 +159,59 @@ describe('POST /api/broadcasts/:id/send-segment role guard', () => {
   });
 });
 
-// 下書きの作成・編集は staff にも許可したままである回帰テスト。
-describe('broadcast draft CRUD stays open to staff', () => {
+// 下書きの作成・編集も一斉配信キャンペーンの組み立てそのもの(送信直前の
+// 内容がここで決まる)なので owner / admin 限定に統一した。
+// test-send も実際に LINE へ送信するため同じ扱い。
+describe('broadcast draft CRUD role guard', () => {
+  const draftBody = {
+    title: 'お知らせ',
+    messageType: 'text',
+    messageContent: 'hello',
+    targetType: 'all',
+  };
+
+  function json(role: Role, path: string, method: string, body?: unknown) {
+    return setupApp(role).request(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
+  test('staff cannot create a draft', async () => {
+    const res = await json('staff', '/api/broadcasts', 'POST', draftBody);
+    expect(res.status).toBe(403);
+    expect(dbMocks.createBroadcast).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot edit a draft', async () => {
+    const res = await json('staff', '/api/broadcasts/b-1', 'PUT', draftBody);
+    expect(res.status).toBe(403);
+    expect(dbMocks.updateBroadcast).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot delete a draft', async () => {
+    const res = await json('staff', '/api/broadcasts/b-1', 'DELETE');
+    expect(res.status).toBe(403);
+    expect(dbMocks.deleteBroadcast).not.toHaveBeenCalled();
+  });
+
+  test('staff cannot trigger a test send', async () => {
+    const res = await json('staff', '/api/broadcasts/b-1/test-send', 'POST', {});
+    expect(res.status).toBe(403);
+    expect(dbMocks.getBroadcastById).not.toHaveBeenCalled();
+  });
+
+  test('admin can create a draft', async () => {
+    dbMocks.createBroadcast.mockResolvedValue({ ...draftBroadcast, status: 'draft' });
+    const res = await json('admin', '/api/broadcasts', 'POST', draftBody);
+    expect(res.status).toBe(201);
+    expect(dbMocks.createBroadcast).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 参照系は staff にも開放したままである回帰テスト。
+describe('broadcast reads stay open to staff', () => {
   test('staff can list broadcasts', async () => {
     dbMocks.getBroadcasts.mockResolvedValue([]);
     const res = await setupApp('staff').request('/api/broadcasts');
